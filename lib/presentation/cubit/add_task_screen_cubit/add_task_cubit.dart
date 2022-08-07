@@ -114,7 +114,12 @@ class AddTaskCubit extends Cubit<AddTaskState> {
           color: taskColors[selectedColorIndex]!);
       AppCubit cubit = AppCubit.get(context);
       await cubit.insertTask(task);
-      await cubit.scheduleNotification(task);
+      task = cubit.tasks.firstWhere((element) => element.id == task.id);
+      if (task.repeat == Repeat.none) {
+        await cubit.scheduleNotification(task);
+      } else {
+        await cubit.repeatNotification(task);
+      }
     } else {
       changeState(AddTaskEmptyTaskTitleErrorState());
     }

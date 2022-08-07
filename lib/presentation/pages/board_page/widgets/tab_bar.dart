@@ -12,9 +12,8 @@ class BoardTabBar extends StatelessWidget {
         return DefaultTabController(
           length: 4,
           child: TabBar(
-            onTap: (index) {
-              BoardCubit.get(context).changeSelectedTab(index, context);
-            },
+            onTap: (index) =>
+                BoardCubit.get(context).changeSelectedTab(index, context),
             indicatorSize: TabBarIndicatorSize.label,
             indicatorWeight: 3,
             indicatorColor: Colors.black,

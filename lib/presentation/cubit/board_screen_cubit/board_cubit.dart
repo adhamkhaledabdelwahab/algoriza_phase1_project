@@ -99,4 +99,50 @@ class BoardCubit extends Cubit<BoardState> {
       _changeState(BoardShowFavouriteTasksErrorState());
     }
   }
+
+  void onDropdownChange(int? val, BuildContext context) async {
+    AppCubit appCubit = AppCubit.get(context);
+    if (val != null) {
+      switch (val) {
+        case 0:
+          await appCubit.deleteAllTasks();
+          await appCubit.deleteAllFavourites();
+          await appCubit.cancelAllNotifications();
+          break;
+        case 1:
+          await appCubit.deleteAllFavourites();
+          break;
+      }
+    }
+  }
+
+  Future<void> navigateTo(Widget widget, BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => widget,
+      ),
+    );
+  }
+
+  Future<void> markTaskAsCompleted(Task task, BuildContext context) async {
+    await AppCubit.get(context).markTaskAsCompleted(task);
+  }
+
+  Future<void> addOrRemoveTaskToOrFromFavourites(
+      BuildContext context, Task task) async {
+    AppCubit appCubit = AppCubit.get(context);
+    appCubit.favourites.any((element) => element.taskId == task.id)
+        ? await appCubit.deleteTaskFromFavourites(Favourite(taskId: task.id))
+        : await appCubit.insertTaskToFavourites(Favourite(taskId: task.id));
+  }
+
+  Future<void> deleteTask(BuildContext context, Task task) async {
+    AppCubit appCubit = AppCubit.get(context);
+    await appCubit.deleteTask(task);
+    await appCubit.cancelNotification(task);
+    if (appCubit.favourites.any((element) => element.taskId == task.id)) {
+      await appCubit.deleteTaskFromFavourites(Favourite(taskId: task.id));
+    }
+  }
 }

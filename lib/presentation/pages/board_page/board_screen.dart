@@ -1,12 +1,11 @@
 import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_cubit.dart';
+import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_states/app_states.dart';
 import 'package:algoriza_phase1_project/presentation/cubit/board_screen_cubit/board_cubit.dart';
 import 'package:algoriza_phase1_project/presentation/components/components.dart';
 import 'package:algoriza_phase1_project/presentation/pages/add_task_page/add_task_screen.dart';
 import 'package:algoriza_phase1_project/presentation/pages/board_page/widgets/widgets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../../cubit/app_tasks_cubit/app_database_loaded_states.dart';
 
 class BoardScreen extends StatelessWidget {
   const BoardScreen({Key? key}) : super(key: key);
@@ -27,7 +26,9 @@ class BoardScreen extends StatelessWidget {
               appState is AppDatabaseFavouritesFetchedState ||
               appState is AppDatabaseFavouritesDeletedState) {
             BoardCubit.get(context).changeSelectedTab(
-                BoardCubit.get(context).selectedIndex, context);
+                BoardCubit
+                    .get(context)
+                    .selectedIndex, context);
           }
         },
         child: BlocListener<BoardCubit, BoardState>(
@@ -54,14 +55,15 @@ class BoardScreen extends StatelessWidget {
                       color: Colors.grey,
                     ),
                     const BoardTabBarView(),
-                    AppButton(
-                      text: 'Add a task',
-                      onPress: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AddTaskScreen(),
-                        ),
-                      ),
+                    BlocBuilder<BoardCubit, BoardState>(
+                      builder: (context, state) {
+                        return AppButton(
+                          text: 'Add a task',
+                          onPress: () =>
+                              BoardCubit.get(context)
+                                  .navigateTo(const AddTaskScreen(), context),
+                        );
+                      },
                     ),
                   ],
                 ),

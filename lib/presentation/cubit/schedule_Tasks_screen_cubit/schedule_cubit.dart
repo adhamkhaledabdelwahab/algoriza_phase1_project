@@ -47,7 +47,16 @@ class ScheduleCubit extends Cubit<ScheduleState> {
     try {
       List<Task> tasks = AppCubit.get(context).tasks;
       for (Task task in tasks) {
-        if (DateFormat.yMd().parse(task.date).compareTo(selectedDate) == 0) {
+        if (DateFormat.yMd().parse(task.date).compareTo(selectedDate) == 0 ||
+            (task.repeat == Repeat.repeatDaily) ||
+            (task.repeat == Repeat.repeatWeekly &&
+                selectedDate
+                            .difference(DateFormat.yMd().parse(task.date))
+                            .inDays %
+                        7 ==
+                    0) ||
+            task.repeat == Repeat.repeatMonthly &&
+                selectedDate.day == DateFormat.yMd().parse(task.date).day) {
           selectedDateTasks.add(task);
         }
       }

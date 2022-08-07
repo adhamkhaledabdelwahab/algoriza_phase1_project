@@ -1,14 +1,10 @@
-import 'package:algoriza_phase1_project/data/models/favourite_model.dart';
-import 'package:algoriza_phase1_project/data/models/task_model.dart';
-import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_cubit.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:algoriza_phase1_project/core/errors/database_errors/database_errors.dart';
+import 'package:algoriza_phase1_project/core/services/database_interfaces/database_interfaces.dart';
+import 'package:algoriza_phase1_project/data/models/models.dart';
 import 'package:sqflite/sqflite.dart';
 
-import '../../presentation/cubit/app_tasks_cubit/app_database_loaded_states.dart';
-import '../../presentation/cubit/app_tasks_cubit/app_database_loading_error_states.dart';
-import '../../presentation/cubit/app_tasks_cubit/app_database_loading_states.dart';
-
-class DatabaseServices {
+class DatabaseServices
+    implements DatabaseTaskInterface, DatabaseFavouriteInterface {
   Database? _database;
   final int _version = 1;
   final String _taskTableName = 'tasks';
@@ -26,127 +22,204 @@ class DatabaseServices {
       'taskId STRING, '
       'FOREIGN  KEY(taskId) REFERENCES tasks(id)'
       ')';
-  late final Function(AppState state) _changeState;
+  bool isOnCreate = false;
 
-  Future<void> initializeDatabase(Function(AppState state) changeState,
-      Function(Database db) insertDummyData) async {
-    _changeState = changeState;
-    _changeState(AppDatabaseInitialState());
+  Future<void> initializeDatabaseService() async {
     if (_database != null) {
-      _changeState(AppDatabaseOpenedState());
+      return;
     } else {
-      await _initializeDatabase(insertDummyData);
+      return await _initializeDatabase();
     }
   }
 
-  Future<void> _initializeDatabase(
-      Function(Database db) insertDummyData) async {
+  Future<void> _initializeDatabase() async {
     String path = await _getAppDatabasePath();
     if (path.isNotEmpty) {
-      return await _openAppDatabase(path, insertDummyData);
+      return await _openAppDatabase(path);
     }
+    throw DatabaseFetchingPathEmptyValueException();
   }
 
   Future<String> _getAppDatabasePath() async {
-    _changeState(AppDatabasePathLoadingState());
     try {
       String path = '${await getDatabasesPath()}task.db';
-      _changeState(AppDatabasePathLoadedState());
       return path;
     } catch (e) {
-      _changeState(AppDatabasePathLoadingErrorState());
-      return '';
+      throw DatabaseFetchingPathException('$e');
     }
   }
 
-  Future<void> _openAppDatabase(
-      String path, Function(Database db) insertDummyData) async {
-    _changeState(AppDatabaseLoadingState());
+  Future<void> _openAppDatabase(String path) async {
     try {
       _database = await openDatabase(
         path,
         version: _version,
-        onCreate: (db, v) => _createAppDatabase(db, v, insertDummyData),
+        onCreate: (db, v) => _createAppDatabase(db, v),
       );
-      _changeState(AppDatabaseOpenedState());
+    } on DatabaseCreatingTaskTableException catch (e) {
+      throw DatabaseCreatingTaskTableException('$e');
+    } on DatabaseCreatingFavouriteTableException catch (e) {
+      throw DatabaseCreatingFavouriteTableException('$e');
     } catch (e) {
-      _changeState(AppDatabaseLoadingErrorState());
+      throw DatabaseLoadingException('$e');
     }
   }
 
-  Future<void> _createAppDatabase(
-      Database db, int v, Function(Database db) insertDummyData) async {
-    await _createDatabaseTaskTable(db);
-    await _createDatabaseFavouriteTable(db);
-    await insertDummyData(db);
+  Future<void> _createAppDatabase(Database db, int v) async {
+    isOnCreate = true;
+    await _createTaskTable(db);
+    await _createFavouriteTable(db);
   }
 
-  Future<void> _createDatabaseTaskTable(Database db) async {
-    _changeState(AppDatabaseTaskTableCreatingState());
+  Future<void> _createTaskTable(Database db) async {
     try {
-      await db.execute(_taskTableCreateSqlStatement);
-      _changeState(AppDatabaseTaskTableCreatedState());
+      return await db.execute(_taskTableCreateSqlStatement);
     } catch (e) {
-      _changeState(AppDatabaseTaskTableCreatingErrorState());
+      throw DatabaseCreatingTaskTableException('$e');
     }
   }
 
-  Future<void> _createDatabaseFavouriteTable(Database db) async {
-    _changeState(AppDatabaseFavouriteTableCreatingState());
+  Future<void> _createFavouriteTable(Database db) async {
     try {
       await db.execute(_favouriteTableCreateSqlStatement);
-      _changeState(AppDatabaseFavouriteTableCreatedState());
     } catch (e) {
-      _changeState(AppDatabaseFavouriteTableCreatingErrorState());
+      throw DatabaseCreatingFavouriteTableException('$e');
     }
   }
 
-  Future<List<Map<String, Object?>>> getAllTasks() async {
-    return await _database!.query(_taskTableName);
-  }
-
-  Future<int> insertTask(Task task) async {
-    return await _database!.insert(_taskTableName, task.toJson());
-  }
-
-  Future<int> markTaskAsCompleted(String id) async {
-    return _database!.rawUpdate(
-        'UPDATE tasks '
-        'SET isCompleted = ? '
-        'WHERE id = ?',
-        [
-          1,
-          id,
-        ]);
-  }
-
-  Future<int> deleteTask(Task task) async {
-    return _database!
-        .delete(_taskTableName, where: 'id = ?', whereArgs: [task.id]);
-  }
-
+  @override
   Future<int> deleteAllTasks() async {
-    return _database!.delete(_taskTableName);
-  }
-
-  Future<List<Map<String, Object?>>> getAllFavourites() async {
-    return await _database!.query(_favouriteTableName);
-  }
-
-  Future<int> insertFavourite(Favourite favourite) async {
     try {
-      return await _database!.insert(_favouriteTableName, favourite.toJson());
+      return await _database!.delete(_taskTableName);
     } catch (e) {
-      return 90000;
+      throw DatabaseDeletingTasksException('$e');
     }
   }
 
-  Future<int> deleteFavourite(Favourite favourite) async {
-    return _database!.delete(_favouriteTableName,
-        where: 'taskId = ?', whereArgs: [favourite.taskId]);
+  @override
+  Future<int> deleteTask(Task task) async {
+    try {
+      int count = await _database!
+          .delete(_taskTableName, where: 'id = ?', whereArgs: [task.id]);
+      if (count > 0) {
+        return count;
+      }
+      throw DatabaseDeletingTaskWrongIdException();
+    } on DatabaseDeletingTaskWrongIdException {
+      throw DatabaseDeletingTaskWrongIdException();
+    } catch (e) {
+      throw DatabaseDeletingTaskException('$e');
+    }
   }
 
-  Future<int> deleteAllTFavourites() async {
-    return _database!.delete(_favouriteTableName);
+  @override
+  Future<List<Map<String, dynamic>>> fetchAllTasks() async {
+    try {
+      return await _database!.query(_taskTableName);
+    } catch (e) {
+      throw DatabaseFetchingTasksException('$e');
+    }
+  }
+
+  @override
+  Future<int> insertTask(Task task) async {
+    try {
+      int id = await _database!.insert(_taskTableName, task.toJson());
+      if (id != 0) {
+        return id;
+      }
+      throw DatabaseInsertingTaskAlgorithmConflictException();
+    } on DatabaseInsertingTaskAlgorithmConflictException {
+      throw DatabaseInsertingTaskAlgorithmConflictException();
+    } catch (e) {
+      throw DatabaseInsertingTaskException('$e');
+    }
+  }
+
+  @override
+  Future<int> markTaskAsCompleted(Task task) async {
+    try {
+      int count = await _database!.rawUpdate(
+          'UPDATE tasks '
+          'SET isCompleted = ? '
+          'WHERE id = ?',
+          [
+            1,
+            task.id,
+          ]);
+      if (count > 0) {
+        return count;
+      }
+      throw DatabaseUpdatingTaskWrongIdException();
+    } on DatabaseUpdatingTaskWrongIdException {
+      throw DatabaseUpdatingTaskWrongIdException();
+    } catch (e) {
+      throw DatabaseUpdatingTaskException('$e');
+    }
+  }
+
+  @override
+  Future<int> deleteAllFavourites() {
+    try {
+      return _database!.delete(_favouriteTableName);
+    } catch (e) {
+      throw DatabaseDeletingFavouritesException('$e');
+    }
+  }
+
+  @override
+  Future<int> deleteTaskFromFavourites(Favourite favourite) async {
+    try {
+      int count = await _database!.delete(_favouriteTableName,
+          where: 'taskId = ?', whereArgs: [favourite.taskId]);
+      if (count > 0) {
+        return count;
+      }
+      throw DatabaseDeletingFavouriteWrongIdException();
+    } on DatabaseDeletingFavouriteWrongIdException {
+      throw DatabaseDeletingFavouriteWrongIdException();
+    } catch (e) {
+      throw DatabaseDeletingFavouriteException('$e');
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchAllFavourites() async {
+    try {
+      return await _database!.query(_favouriteTableName);
+    } catch (e) {
+      throw DatabaseFetchingFavouritesException('$e');
+    }
+  }
+
+  @override
+  Future<int> insertTaskToFavourites(Favourite favourite) async {
+    try {
+      int id = await _database!.insert(_favouriteTableName, favourite.toJson());
+      if (id != 0) {
+        return id;
+      }
+      throw DatabaseInsertingFavouriteAlgorithmConflictException();
+    } on DatabaseInsertingFavouriteAlgorithmConflictException {
+      throw DatabaseInsertingFavouriteAlgorithmConflictException();
+    } catch (e) {
+      throw DatabaseInsertingFavouriteException('$e');
+    }
+  }
+
+  @override
+  Future<List<Map<String, dynamic>>> fetchTask(Task task) async {
+    try {
+      List<Map<String, dynamic>> data = await _database!
+          .query(_taskTableName, where: 'id = ?', whereArgs: [task.id]);
+      if (data.isNotEmpty) {
+        return data;
+      }
+      throw DatabaseFetchingTaskWrongIdException();
+    } on DatabaseFetchingTaskWrongIdException {
+      throw DatabaseFetchingTaskWrongIdException();
+    } catch (e) {
+      throw DatabaseFetchingTaskException('$e');
+    }
   }
 }

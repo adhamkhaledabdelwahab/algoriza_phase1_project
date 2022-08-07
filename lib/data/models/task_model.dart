@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:algoriza_phase1_project/data/models/task_colors.dart';
 import 'package:algoriza_phase1_project/data/models/task_reminders.dart';
 import 'package:algoriza_phase1_project/data/models/task_repeat.dart';
@@ -53,5 +55,5 @@ class Task {
         repeat = taskRepeats[json['repeat'] as int]!,
         color = taskColors[json['color'] as int]!,
         isCompleted = json['isCompleted'] as int,
-        notificationId = json['notificationId'] as int;
+        notificationId = (json['notificationId'] ?? Random().nextInt(99999)) as int;
 }

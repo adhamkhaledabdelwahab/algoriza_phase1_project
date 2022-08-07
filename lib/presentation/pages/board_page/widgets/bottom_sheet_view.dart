@@ -1,5 +1,6 @@
 import 'package:algoriza_phase1_project/data/models/models.dart';
 import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_cubit.dart';
+import 'package:algoriza_phase1_project/presentation/cubit/board_screen_cubit/board_cubit.dart';
 import 'package:algoriza_phase1_project/presentation/pages/board_page/widgets/bottom_sheet_item.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -14,6 +15,7 @@ class BottomSheetView extends StatelessWidget {
     return BlocBuilder<AppCubit, AppState>(
       builder: (context, state) {
         AppCubit appCubit = AppCubit.get(context);
+        BoardCubit boardCubit = BoardCubit.get(context);
         return SingleChildScrollView(
           child: Container(
             padding: const EdgeInsets.only(top: 4),
@@ -42,10 +44,9 @@ class BottomSheetView extends StatelessWidget {
                         children: [
                           BottomSheetItem(
                             label: 'Task Completed',
-                            onTap: () {
-                              appCubit.markTaskAsCompleted(task);
-                              Navigator.pop(context);
-                            },
+                            onTap: () => boardCubit
+                                .markTaskAsCompleted(task, context)
+                                .then((value) => Navigator.pop(context)),
                             clr: const Color(0xFF4e5ae8),
                           ),
                           const SizedBox(
@@ -58,15 +59,9 @@ class BottomSheetView extends StatelessWidget {
                           .any((element) => element.taskId == task.id)
                       ? 'Remove Task From Favourites'
                       : 'Add Task To Favourites',
-                  onTap: () {
-                    appCubit.favourites
-                            .any((element) => element.taskId == task.id)
-                        ? appCubit
-                            .deleteTaskFromFavourite(Favourite(taskId: task.id))
-                        : appCubit
-                            .addTaskToFavourite(Favourite(taskId: task.id));
-                    Navigator.pop(context);
-                  },
+                  onTap: () => boardCubit
+                      .addOrRemoveTaskToOrFromFavourites(context, task)
+                      .then((value) => Navigator.pop(context)),
                   clr: const Color(0xFF4e5ae8),
                 ),
                 const SizedBox(
@@ -74,11 +69,9 @@ class BottomSheetView extends StatelessWidget {
                 ),
                 BottomSheetItem(
                   label: 'Delete Task',
-                  onTap: () {
-                    appCubit.deleteTask(task).then((value) => appCubit
-                        .cancelNotification(task)
-                        .then((value) => Navigator.pop(context)));
-                  },
+                  onTap: () => boardCubit
+                      .deleteTask(context, task)
+                      .then((value) => Navigator.pop(context)),
                   clr: Colors.red[300]!,
                 ),
                 const SizedBox(

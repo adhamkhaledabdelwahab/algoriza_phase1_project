@@ -2,7 +2,7 @@ import 'package:algoriza_phase1_project/presentation/components/app_bar_widget.d
 import 'package:algoriza_phase1_project/presentation/components/app_button_widget.dart';
 import 'package:algoriza_phase1_project/presentation/cubit/add_task_screen_cubit/add_task_cubit.dart';
 import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_cubit.dart';
-import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_database_loaded_states.dart';
+import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_states/app_states.dart';
 import 'package:algoriza_phase1_project/presentation/pages/add_task_page/widgets/form_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';

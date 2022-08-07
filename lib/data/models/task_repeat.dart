@@ -2,6 +2,9 @@ enum Repeat { none, repeatDaily, repeatWeekly, repeatMonthly }
 
 const Map<int, Repeat> taskRepeats = {
   0: Repeat.none,
+  1: Repeat.repeatDaily,
+  2: Repeat.repeatWeekly,
+  3: Repeat.repeatMonthly,
 };
 
 String getRepeat(int repeatIndex) {

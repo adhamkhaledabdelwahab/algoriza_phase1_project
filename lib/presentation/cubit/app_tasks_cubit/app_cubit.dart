@@ -1,367 +1,372 @@
 import 'dart:math';
-
-import 'package:algoriza_phase1_project/core/services/database_services.dart';
-import 'package:algoriza_phase1_project/core/services/flutter_local_notification_services.dart';
-import 'package:algoriza_phase1_project/data/models/favourite_model.dart';
-import 'package:algoriza_phase1_project/data/models/task_colors.dart';
-import 'package:algoriza_phase1_project/data/models/task_model.dart';
+import 'package:algoriza_phase1_project/core/errors/database_errors/database_errors.dart';
+import 'package:algoriza_phase1_project/core/errors/notification_errors/notification_errors.dart';
+import 'package:algoriza_phase1_project/core/errors/notification_work_manager_errors/notification_work_manager_errors.dart';
+import 'package:algoriza_phase1_project/core/services/services.dart';
+import 'package:algoriza_phase1_project/core/utils/helper_methods.dart';
+import 'package:algoriza_phase1_project/data/models/models.dart';
+import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_cubit_interfaces/app_cubit_interfaces.dart';
+import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_states/app_states.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
-import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
-
-import 'app_database_loaded_states.dart';
-import 'app_database_loading_error_states.dart';
-import 'app_database_loading_states.dart';
-import 'app_notification_loaded_state.dart';
-import 'app_notification_loading_error_state.dart';
-import 'app_notification_loading_states.dart';
 
 part 'app_state.dart';
 
-class AppCubit extends Cubit<AppState> {
+class AppCubit extends Cubit<AppState>
+    implements
+        CubitDatabaseTaskInterface,
+        CubitDatabaseFavouriteInterface,
+        CubitNotificationInterface {
   List<Task> tasks = [];
   List<Favourite> favourites = [];
-  final DatabaseServices _databaseServices = DatabaseServices();
-  final FlutterLocalNotificationService _notificationService =
-      FlutterLocalNotificationService();
+  final DatabaseServices _databaseServices;
+  final FlutterLocalNotificationService _notificationService;
+  final WorkManagerService _workManagerService;
 
   static AppCubit get(BuildContext context) =>
       BlocProvider.of<AppCubit>(context);
 
   _changeState(AppState state) {
-    Future.delayed(const Duration(milliseconds: 300)).then(
+    Future.delayed(const Duration(milliseconds: 200)).then(
       (value) => emit(state),
     );
   }
 
-  AppCubit() : super(AppInitialState()) {
-    _databaseServices
-        .initializeDatabase(_changeState, _insertDummyData)
-        .then((value) {
-      getAllTasks();
-      getAllFavourites();
-    });
-    _initializeNotificationService();
+  AppCubit(this._databaseServices, this._notificationService,
+      this._workManagerService)
+      : super(AppInitialState()) {
+    appInitialization();
   }
 
-  Future<void> _initializeNotificationService() async {
-    _changeState(AppNotificationLoadingState());
+  Future<void> appInitialization() async {
+    await _initializeAppNotificationService();
+    await _initializeAppWorkManagerService();
+    await _initializeAppDatabaseService();
+  }
+
+  Future<void> _initializeAppDatabaseService() async {
     try {
-      bool? result = await _notificationService.initializeNotification();
-      if (result == null || result == false) {
-        _changeState(AppNotificationLoadingErrorState());
-      } else {
-        _changeState(AppNotificationLoadedState());
+      _changeState(AppDatabaseInitializingState());
+      await _databaseServices.initializeDatabaseService();
+      _changeState(AppDatabaseInitializedState());
+      if (_databaseServices.isOnCreate) {
+        await _insertDummyData();
       }
+      await fetchAllTasks();
+      await fetchAllFavourites();
+    } on DatabaseFetchingPathException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabasePathLoadingErrorState());
+    } on DatabaseFetchingPathEmptyValueException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabasePathLoadingEmptyValueErrorState());
+    } on DatabaseCreatingTaskTableException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseTaskTableCreatingErrorState());
+    } on DatabaseCreatingFavouriteTableException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseFavouriteTableCreatingErrorState());
     } catch (e) {
-      _changeState(AppNotificationLoadingErrorState());
+      printErrMsg('$e');
+      _changeState(AppDatabaseInitializingErrorState());
     }
   }
 
-  Future<void> _insertDummyData(Database db) async {
+  Future<void> _initializeAppNotificationService() async {
+    try {
+      _changeState(AppNotificationInitializingState());
+      await _notificationService.initializeNotificationService();
+      _changeState(AppNotificationInitializedState());
+    } on NotificationInitializingFalseOrNullValueException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationInitializingFalseOrNullValueErrorState());
+    } on NotificationIOSPermissionException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationIOSPermissionError());
+    } on NotificationIOSPermissionNotGrantedOrNullException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationIOSPermissionNotGrantedOrNullErrorState());
+    } on NotificationTimeZoneException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationTimeZoneErrorState());
+    } catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationInitializingErrorState());
+    }
+  }
+
+  Future<void> _initializeAppWorkManagerService() async {
+    try {
+      _changeState(AppWorkManagerInitializingState());
+      await _workManagerService.initializeWorkManagerService();
+      _changeState(AppWorkManagerInitializedState());
+    } catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationWorkManagerInitializationErrorState());
+    }
+  }
+
+  Future<void> _insertDummyData() async {
     for (int i = 1; i <= 10; i++) {
-      _changeState(AppDatabaseTaskInsertingState());
       String id = const Uuid().v4();
-      try {
-        Task task = Task(
-          id: id,
-          title: 'Title $i',
-          date: DateFormat.yMd().format(DateTime.now().add(Duration(days: i))),
-          startTime: DateFormat('HH:mm aa').format(DateTime.now()),
-          endTime: DateFormat('HH:mm aa').format(
-            DateTime.now().add(
-              const Duration(minutes: 30),
-            ),
+      Task task = Task(
+        id: id,
+        title: 'Title $i',
+        date: DateFormat.yMd().format(DateTime.now().add(Duration(days: i))),
+        startTime: DateFormat('HH:mm aa').format(DateTime.now()),
+        endTime: DateFormat('HH:mm aa').format(
+          DateTime.now().add(
+            const Duration(minutes: 30),
           ),
-          color: taskColors[Random().nextInt(3)]!,
-          isCompleted: Random().nextInt(1),
-        );
-        int taskResult = await db.insert('tasks', task.toJson());
-        _onDatabaseInsertTask(taskResult, task);
-      } catch (e) {
-        _changeState(AppDatabaseTaskInsertingErrorState());
-      }
+        ),
+        color: taskColors[Random().nextInt(3)]!,
+        isCompleted: Random().nextInt(1),
+      );
+      await insertTask(task);
       if (i == 3 || i == 7 || i == 5) {
-        try {
-          int favResult =
-              await db.insert('favourites', Favourite(taskId: id).toJson());
-          _onDatabaseAddingTaskToFavourites(favResult, Favourite(taskId: id));
-        } catch (e) {
-          _changeState(AppDatabaseFavouritesTaskInsertingErrorState());
-        }
+        await insertTaskToFavourites(Favourite(taskId: id));
       }
     }
   }
 
-  Future<void> insertTask(Task task) async {
-    _changeState(AppDatabaseTaskInsertingState());
+  @override
+  Future<void> deleteAllFavourites() async {
+    _changeState(AppDatabaseAllFavouritesDeletingState());
     try {
-      int id = await _databaseServices.insertTask(task);
-      _onDatabaseInsertTask(id, task);
+      await _databaseServices.deleteAllFavourites();
+      favourites.clear();
+      _changeState(AppDatabaseFavouritesDeletedState());
     } catch (e) {
-      _onDatabaseInsertTaskError();
+      printErrMsg('$e');
+      _changeState(AppDatabaseFavouritesDeletingErrorState());
     }
   }
 
-  void _onDatabaseInsertTask(int id, Task task) {
-    if (id > 0) {
-      tasks.add(task);
-      _changeState(AppDatabaseTaskInsertedState());
-    } else {
-      _changeState(AppDatabaseTaskInsertingAlgorithmConflictErrorState());
+  @override
+  Future<void> deleteAllTasks() async {
+    _changeState(AppDatabaseAllTasksDeletingState());
+    try {
+      await _databaseServices.deleteAllTasks();
+      tasks.clear();
+      _changeState(AppDatabaseTasksDeletedState());
+    } catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseTasksDeletingErrorState());
     }
   }
 
-  void _onDatabaseInsertTaskError() {
-    _changeState(AppDatabaseTaskInsertingErrorState());
-  }
-
+  @override
   Future<void> deleteTask(Task task) async {
     _changeState(AppDatabaseTaskDeletingState());
     try {
-      int count = await _databaseServices.deleteTask(task);
-      _onDatabaseDeleteTask(count, task.id);
-    } catch (e) {
-      _onDatabaseDeleteTaskError();
-    }
-  }
-
-  void _onDatabaseDeleteTask(int count, String id) {
-    if (count > 0) {
-      tasks.removeWhere((element) => element.id == id);
+      await _databaseServices.deleteTask(task);
+      tasks.removeWhere((element) => element.id == task.id);
       _changeState(AppDatabaseTaskDeletedState());
-    } else {
+    } on DatabaseDeletingTaskWrongIdException catch (e) {
+      printErrMsg('$e');
       _changeState(AppDatabaseTaskDeletingWrongIdErrorState());
-    }
-  }
-
-  void _onDatabaseDeleteTaskError() {
-    _changeState(AppDatabaseTaskDeletingErrorState());
-  }
-
-  Future<void> getAllTasks() async {
-    _changeState(AppDatabaseTasksFetchingState());
-    try {
-      List<Map<String, dynamic>> data = await _databaseServices.getAllTasks();
-      _onDatabaseFetchingTasks(data);
     } catch (e) {
-      _onDatabaseFetchingTasksError();
+      printErrMsg('$e');
+      _changeState(AppDatabaseTaskDeletingErrorState());
     }
   }
 
-  void _onDatabaseFetchingTasks(List<Map<String, dynamic>> value) {
-    _getTaskFromJson(value);
-    _changeState(AppDatabaseTasksFetchedState());
-  }
-
-  void _getTaskFromJson(List<Map<String, dynamic>> value) {
-    tasks.clear();
-    for (var element in value) {
-      Task task = Task.fromJson(element);
-      tasks.add(task);
-    }
-  }
-
-  void _onDatabaseFetchingTasksError() {
-    _changeState(AppDatabaseTasksFetchingErrorState());
-  }
-
-  Future<void> deleteAllTasks() async {
-    _changeState(AppDatabaseTasksDeletingState());
+  @override
+  Future<void> deleteTaskFromFavourites(Favourite favourite) async {
+    _changeState(AppDatabaseFavouritesTaskDeletingState());
     try {
-      int count = await _databaseServices.deleteAllTasks();
-      _onDatabaseDeletingTasks(count);
+      await _databaseServices.deleteTaskFromFavourites(favourite);
+      favourites.removeWhere((element) => element.taskId == favourite.taskId);
+      _changeState(AppDatabaseFavouritesTaskDeletedState());
+    } on DatabaseDeletingFavouriteWrongIdException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseFavouritesTaskDeletingWrongIdErrorState());
     } catch (e) {
-      _onDatabaseDeletingTasksError();
+      printErrMsg('$e');
+      _changeState(AppDatabaseFavouritesTaskDeletingErrorState());
     }
   }
 
-  void _onDatabaseDeletingTasks(int count) {
-    tasks.clear();
-    _changeState(AppDatabaseTasksDeletedState());
-  }
-
-  void _onDatabaseDeletingTasksError() {
-    _changeState(AppDatabaseTasksDeletingErrorState());
-  }
-
-  Future<void> markTaskAsCompleted(Task task) async {
-    _changeState(AppDatabaseTaskUpdatingState());
-    try {
-      int count = await _databaseServices.markTaskAsCompleted(task.id);
-      _onDatabaseUpdatingTask(count, task);
-    } catch (e) {
-      _onDatabaseUpdatingTaskError();
-    }
-  }
-
-  void _onDatabaseUpdatingTask(int count, Task oldTask) {
-    if (count > 0) {
-      int index = tasks.indexWhere((element) => element.id == oldTask.id);
-      Task updatedTask = Task(
-        id: oldTask.id,
-        title: oldTask.title,
-        date: oldTask.date,
-        startTime: oldTask.startTime,
-        endTime: oldTask.endTime,
-        color: oldTask.color,
-        isCompleted: 1,
-        notificationId: oldTask.notificationId,
-      );
-      tasks[index] = updatedTask;
-      _changeState(AppDatabaseTaskUpdatedState());
-    } else {
-      _changeState(AppDatabaseTaskUpdatingWrongIdErrorState());
-    }
-  }
-
-  void _onDatabaseUpdatingTaskError() {
-    _changeState(AppDatabaseTaskUpdatingErrorState());
-  }
-
-  Future<void> getAllFavourites() async {
-    _changeState(AppDatabaseFavouritesFetchingState());
+  @override
+  Future<void> fetchAllFavourites() async {
+    _changeState(AppDatabaseAllFavouritesFetchingState());
     try {
       List<Map<String, dynamic>> data =
-          await _databaseServices.getAllFavourites();
-      _onDatabaseFetchingFavourites(data);
+          await _databaseServices.fetchAllFavourites();
+      _fetchFavouritesFromJson(data);
+      _changeState(AppDatabaseFavouritesFetchedState());
     } catch (e) {
-      _onDatabaseFetchingFavouritesError();
+      printErrMsg('$e');
+      _changeState(AppDatabaseFavouritesFetchingErrorState());
     }
   }
 
-  void _onDatabaseFetchingFavourites(List<Map<String, dynamic>> value) {
-    _getFavouriteFromJson(value);
-    _changeState(AppDatabaseFavouritesFetchedState());
-  }
-
-  void _getFavouriteFromJson(List<Map<String, dynamic>> value) {
+  void _fetchFavouritesFromJson(List<Map<String, dynamic>> data) {
     favourites.clear();
-    for (var element in value) {
+    for (var element in data) {
       Favourite favourite = Favourite.fromJson(element);
       favourites.add(favourite);
     }
   }
 
-  void _onDatabaseFetchingFavouritesError() {
-    _changeState(AppDatabaseFavouritesFetchingErrorState());
+  @override
+  Future<void> fetchAllTasks() async {
+    _changeState(AppDatabaseAllTasksFetchingState());
+    try {
+      List<Map<String, dynamic>> data = await _databaseServices.fetchAllTasks();
+      _fetchTasksFromJson(data);
+      _changeState(AppDatabaseTasksFetchedState());
+    } catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseTasksFetchingErrorState());
+    }
   }
 
-  Future<void> addTaskToFavourite(Favourite favourite) async {
+  void _fetchTasksFromJson(List<Map<String, dynamic>> data) {
+    tasks.clear();
+    for (var element in data) {
+      Task task = Task.fromJson(element);
+      tasks.add(task);
+    }
+  }
+
+  @override
+  Future<void> insertTask(Task task) async {
+    _changeState(AppDatabaseTaskInsertingState());
+    try {
+      await _databaseServices.insertTask(task);
+      await _updateTasks(task, true);
+      _changeState(AppDatabaseTaskInsertedState());
+    } on DatabaseInsertingTaskAlgorithmConflictException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseTaskInsertingAlgorithmConflictErrorState());
+    } catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseTaskInsertingErrorState());
+    }
+  }
+
+  @override
+  Future<void> insertTaskToFavourites(Favourite favourite) async {
     _changeState(AppDatabaseFavouritesTaskInsertingState());
     try {
-      int id = await _databaseServices.insertFavourite(favourite);
-      _onDatabaseAddingTaskToFavourites(id, favourite);
-    } catch (e) {
-      _onDatabaseAddingTaskToFavouritesError();
-    }
-  }
-
-  void _onDatabaseAddingTaskToFavourites(int id, Favourite favourite) {
-    if (id > 0) {
+      await _databaseServices.insertTaskToFavourites(favourite);
       favourites.add(favourite);
       _changeState(AppDatabaseFavouritesTaskInsertedState());
-    } else {
+    } on DatabaseInsertingFavouriteAlgorithmConflictException catch (e) {
+      printErrMsg('$e');
       _changeState(
           AppDatabaseFavouritesTaskInsertingAlgorithmConflictErrorState());
-    }
-  }
-
-  void _onDatabaseAddingTaskToFavouritesError() {
-    _changeState(AppDatabaseFavouritesTaskInsertingErrorState());
-  }
-
-  Future<void> deleteTaskFromFavourite(Favourite favourite) async {
-    _changeState(AppDatabaseFavouritesTaskDeletingState());
-    try {
-      int count = await _databaseServices.deleteFavourite(favourite);
-      _onDatabaseFavouritesTaskDeleting(count, favourite);
     } catch (e) {
-      _onDatabaseFavouritesTaskDeletingError();
+      printErrMsg('$e');
+      _changeState(AppDatabaseFavouritesTaskInsertingErrorState());
     }
   }
 
-  void _onDatabaseFavouritesTaskDeleting(int count, Favourite favourite) {
-    if (count > 0) {
-      favourites.removeWhere((element) => element.taskId == favourite.taskId);
-      _changeState(AppDatabaseFavouritesTaskDeletedState());
+  @override
+  Future<void> markTaskAsCompleted(Task task) async {
+    _changeState(AppDatabaseTaskUpdatingState());
+    try {
+      await _databaseServices.markTaskAsCompleted(task);
+      await _updateTasks(task, false);
+      _changeState(AppDatabaseTaskUpdatedState());
+    } on DatabaseUpdatingTaskWrongIdException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseTaskUpdatingWrongIdErrorState());
+    } catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseTaskUpdatingErrorState());
+    }
+  }
+
+  Future<void> _updateTasks(Task task, bool isInsert) async {
+    Task? resultTask = await _fetchTask(task);
+    if (resultTask != null) {
+      if (isInsert == true) {
+        tasks.add(resultTask);
+      } else {
+        tasks[tasks.indexWhere((element) => element.id == resultTask.id)] =
+            resultTask;
+      }
     } else {
-      _changeState(AppDatabaseFavouritesTaskDeletingWrongIdErrorState());
+      fetchAllTasks();
     }
   }
 
-  void _onDatabaseFavouritesTaskDeletingError() {
-    _changeState(AppDatabaseFavouritesTaskDeletingErrorState());
-  }
-
-  Future<void> deleteAllFavourites() async {
-    _changeState(AppDatabaseFavouritesDeletingState());
+  Future<Task?> _fetchTask(Task task) async {
     try {
-      int count = await _databaseServices.deleteAllTFavourites();
-      _onDatabaseDeletingAllFavourites(count);
+      List<Map<String, dynamic>> data = await _databaseServices.fetchTask(task);
+      Task resultTask = Task.fromJson(data[0]);
+      return resultTask;
+    } on DatabaseFetchingTaskWrongIdException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppDatabaseFetchingTaskWrongIdErrorState());
     } catch (e) {
-      _onDatabaseDeletingAllFavouritesError();
+      printErrMsg('$e');
+      _changeState(AppDatabaseFetchingTaskErrorState());
     }
+    return null;
   }
 
-  void _onDatabaseDeletingAllFavourites(int count) {
-    favourites.clear();
-    _changeState(AppDatabaseFavouritesDeletedState());
-  }
-
-  void _onDatabaseDeletingAllFavouritesError() {
-    _changeState(AppDatabaseFavouritesDeletingErrorState());
-  }
-
-  Future<void> displayNotification(Task task) async {
-    _changeState(AppNotificationDisplayingState());
+  @override
+  Future<void> cancelAllNotifications() async {
     try {
-      await _notificationService.displayNotification(task);
-      _changeState(AppNotificationDisplayedState());
+      _changeState(AppNotificationAllNotificationCancelingState());
+      await _notificationService.cancelAllNotifications();
+      await _workManagerService.cancelAllTasks();
+      _changeState(AppNotificationAllNotificationCanceledState());
+    } on NotificationWorkManagerCancelAllTasksException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationWorkManagerCancelingAllTasksErrorState());
     } catch (e) {
-      _changeState(AppNotificationDisplayingErrorState());
+      printErrMsg('$e');
+      _changeState(AppNotificationAllNotificationCancelingErrorState());
     }
   }
 
-  Future<void> repeatNotification(Task task) async {
-    _changeState(AppNotificationRepeatingState());
-    try {
-      await _notificationService.repeatNotification(task);
-      _changeState(AppNotificationRepeatedState());
-    } catch (e) {
-      _changeState(AppNotificationRepeatingErrorState());
-    }
-  }
-
-  Future<void> scheduleNotification(Task task) async {
-    _changeState(AppNotificationSchedulingState());
-    try {
-      await _notificationService.scheduledNotification(task);
-      _changeState(AppNotificationScheduledState());
-    } catch (e) {
-      _changeState(AppNotificationSchedulingErrorState());
-    }
-  }
-
+  @override
   Future<void> cancelNotification(Task task) async {
-    _changeState(AppNotificationCancelingState());
     try {
+      _changeState(AppNotificationCancelingState());
       await _notificationService.cancelNotification(task);
+      await _workManagerService.cancelTaskByUniqueName(task);
       _changeState(AppNotificationCanceledState());
+    } on NotificationWorkManagerCancelTaskByUniqueNameException catch (e) {
+      printErrMsg('$e');
+      _changeState(
+          AppNotificationWorkManagerCancelingTaskByUniqueNameErrorState());
     } catch (e) {
+      printErrMsg('$e');
       _changeState(AppNotificationCancelingErrorState());
     }
   }
 
-  Future<void> cancelAllNotifications() async {
-    _changeState(AppNotificationAllNotificationCancelingState());
+  @override
+  Future<void> repeatNotification(Task task) async {
     try {
-      await _notificationService.cancelAllNotifications();
-      _changeState(AppNotificationAllNotificationCanceledState());
+      _changeState(AppNotificationRepeatingState());
+      await _workManagerService.registerPeriodicTask(task);
+      _changeState(AppNotificationRepeatedState());
+    } on NotificationWorkManagerRepeatTaskException catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationWorkManagerRepeatTaskErrorState());
     } catch (e) {
-      _changeState(AppNotificationAllNotificationCancelingErrorState());
+      printErrMsg('$e');
+      _changeState(AppNotificationRepeatingErrorState());
+    }
+  }
+
+  @override
+  Future<void> scheduleNotification(Task task) async {
+    try {
+      _changeState(AppNotificationSchedulingState());
+      await _notificationService.scheduleNotification(task);
+      _changeState(AppNotificationScheduledState());
+    } catch (e) {
+      printErrMsg('$e');
+      _changeState(AppNotificationSchedulingErrorState());
     }
   }
 }

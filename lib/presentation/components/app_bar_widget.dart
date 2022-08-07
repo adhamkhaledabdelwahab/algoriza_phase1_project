@@ -1,4 +1,4 @@
-import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_cubit.dart';
+import 'package:algoriza_phase1_project/presentation/cubit/board_screen_cubit/board_cubit.dart';
 import 'package:algoriza_phase1_project/presentation/pages/schedule_page/scheduled_task_screen.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -40,20 +40,8 @@ class MyAppBar extends StatelessWidget {
       actions: isBoardScreen
           ? [
               CustomDropdownWidget(
-                onDropdownChange: (int? val) {
-                  if (val != null) {
-                    switch (val) {
-                      case 0:
-                        AppCubit.get(context).deleteAllTasks();
-                        AppCubit.get(context).deleteAllFavourites();
-                        AppCubit.get(context).cancelAllNotifications();
-                        break;
-                      case 1:
-                        AppCubit.get(context).deleteAllFavourites();
-                        break;
-                    }
-                  }
-                },
+                onDropdownChange: (val) =>
+                    BoardCubit.get(context).onDropdownChange(val, context),
                 dataMap: const {
                   0: 'Delete All Tasks',
                   1: 'Delete All Favourites',
@@ -62,12 +50,8 @@ class MyAppBar extends StatelessWidget {
                 iconColor: Colors.black,
               ),
               IconButton(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const ScheduledTasksScreen(),
-                  ),
-                ),
+                onPressed: () => BoardCubit.get(context)
+                    .navigateTo(const ScheduledTasksScreen(), context),
                 icon: const Icon(
                   Icons.calendar_today_outlined,
                   color: Colors.black,

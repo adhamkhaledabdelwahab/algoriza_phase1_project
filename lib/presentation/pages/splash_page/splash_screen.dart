@@ -1,10 +1,9 @@
 import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_cubit.dart';
+import 'package:algoriza_phase1_project/presentation/cubit/app_tasks_cubit/app_states/app_states.dart';
 import 'package:algoriza_phase1_project/presentation/pages/board_page/board_screen.dart';
 import 'package:algoriza_phase1_project/presentation/pages/splash_page/widgets/splash_text_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../../cubit/app_tasks_cubit/app_database_loaded_states.dart';
 
 class SplashScreen extends StatelessWidget {
   const SplashScreen({Key? key}) : super(key: key);
